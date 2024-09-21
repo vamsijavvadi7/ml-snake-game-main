@@ -3,8 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JavaScript Snake Game</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>JavaScript Snake Game with Voice Control</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"
         integrity="sha384-JcKb8q3iqJ61gNV9KGb8thSsNjpSL0n8PARn9HuZOnIxN0hoP+VmmDGMN5t9UJ0Z" crossorigin="anonymous">
     <link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css">
@@ -24,19 +24,17 @@
         canvas {
             background: #111;
             border: 3px solid #00ff99;
-            position: absolute;
-            left: 0;
-            top: 50%;
-            transform: translateY(-50%);
-            margin-left: 20px;
+            margin: 20px;
             border-radius: 10px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            max-width: 100%;
+            height: auto;
         }
 
         .control-panel {
             position: absolute;
-            top: 20px;
-            right: 20px;
+            top: 10px;
+            right: 10px;
             z-index: 20;
             color: white;
             background: rgba(0, 0, 0, 0.7);
@@ -72,22 +70,367 @@
             margin-top: 15px;
             text-shadow: 1px 1px 5px rgba(0, 0, 0, 0.5);
         }
-    </style>
 
-    <script src="snake.js"></script>
+        .score {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-size: 24px;
+            font-family: Arial, sans-serif;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Start and Game Over Pop-Up */
+        .popup {
+            display: none;
+            position: fixed;
+            z-index: 100;
+            background-color: rgba(0, 0, 0, 0.8);
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .popup-content {
+            background: white;
+            padding: 30px;
+            text-align: center;
+            border-radius: 10px;
+            box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.2);
+            animation: popupAnimation 0.5s ease-out;
+        }
+
+        .popup-content h1 {
+            font-size: 2rem;
+            margin-bottom: 20px;
+        }
+
+        .btn-popup {
+            background: linear-gradient(45deg, #00c6ff, #0072ff);
+            color: white;
+            padding: 12px 24px;
+            font-weight: bold;
+            border-radius: 5px;
+            border: none;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+
+        .btn-popup:hover {
+            background: linear-gradient(45deg, #00ff89, #00c6ff);
+            transform: scale(1.05);
+        }
+
+        @keyframes popupAnimation {
+            from {
+                opacity: 0;
+                transform: scale(0.9);
+            }
+
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        @media (max-width: 768px) {
+            body {
+                flex-direction: column;
+            }
+
+            .control-panel {
+                top: 5px;
+                right: 5px;
+                padding: 10px;
+            }
+
+            canvas {
+                width: 90%;
+                height: auto;
+            }
+
+            .control-panel div {
+                font-size: 1rem;
+            }
+
+            .btn-primary {
+                padding: 8px 16px;
+            }
+
+            .score {
+                font-size: 20px;
+            }
+        }
+    </style>
 </head>
 
-<body onload="init();">
+<body onload="showStartPopup();">
     <div class="control-panel">
         <div>Teachable Machine Audio Model</div>
-        <button type="button" class="btn btn-primary" onclick="init()">Start Game</button>
         <div id="label-container"></div>
     </div>
 
-    <canvas id="myCanvas" width="1000" height="800"></canvas>
+    <div class="score">Score: <span id="score">0</span></div>
+    <canvas id="myCanvas" width="1000" height="600"></canvas>
 
+    <!-- Start Popup -->
+    <div id="startPopup" class="popup">
+        <div class="popup-content">
+            <h1>Start the Game!</h1>
+            <button class="btn-popup" onclick="startGame()">Start</button>
+        </div>
+    </div>
+
+    <!-- Game Over Popup -->
+    <div id="gameOverPopup" class="popup">
+        <div class="popup-content">
+            <h1>Game Over!</h1>
+            <p>Your Score: <span id="finalScore">0</span></p>
+            <button class="btn-popup" onclick="restartGame()">Play Again</button>
+        </div>
+    </div>
+
+    <!-- Including TensorFlow.js for the Teachable Machine -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.4.0/dist/speech-commands.min.js"></script>
+
+    <script>
+        var canvas;
+        var ctx;
+
+        var head;
+        var apple;
+        var ball;
+
+        var dots;
+        var apple_x;
+        var apple_y;
+        var score = 0; // Initialize score
+
+        var leftDirection = false;
+        var rightDirection = true;
+        var upDirection = false;
+        var downDirection = false;
+        var inGame = false;
+
+        const DOT_SIZE = 10;
+        const ALL_DOTS = 900;
+        const MAX_RAND = 29;
+        const DELAY = 140;
+        const C_HEIGHT = 600;
+        const C_WIDTH = 1000;
+
+        var x = new Array(ALL_DOTS);
+        var y = new Array(ALL_DOTS);
+
+        function loadImages() {
+            head = new Image();
+            head.src = 'head.png';
+
+            ball = new Image();
+            ball.src = 'dot.png';
+
+            apple = new Image();
+            apple.src = 'apple.png';
+        }
+
+        function createSnake() {
+            dots = 3;
+            score = 0;
+            document.getElementById('score').textContent = score;
+
+            for (var z = 0; z < dots; z++) {
+                x[z] = 50 - z * 10;
+                y[z] = 50;
+            }
+        }
+
+        function checkApple() {
+            if ((x[0] == apple_x) && (y[0] == apple_y)) {
+                dots++;
+                score++; // Increase score when apple is eaten
+                document.getElementById('score').textContent = score; // Update score display
+                locateApple();
+            }
+        }
+
+        function doDrawing() {
+            ctx.clearRect(0, 0, C_WIDTH, C_HEIGHT);
+
+            if (inGame) {
+                ctx.drawImage(apple, apple_x, apple_y);
+
+                for (var z = 0; z < dots; z++) {
+                    if (z == 0) {
+                        ctx.drawImage(head, x[z], y[z]);
+                    } else {
+                        ctx.drawImage(ball, x[z], y[z]);
+                    }
+                }
+            } else {
+                gameOver();
+            }
+        }
+
+        function gameOver() {
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('gameOverPopup').style.display = "flex";
+        }
+
+        function move() {
+            for (var z = dots; z > 0; z--) {
+                x[z] = x[(z - 1)];
+                y[z] = y[(z - 1)];
+            }
+
+            if (leftDirection) {
+                x[0] -= DOT_SIZE;
+            }
+
+            if (rightDirection) {
+                x[0] += DOT_SIZE;
+            }
+
+            if (upDirection) {
+                y[0] -= DOT_SIZE;
+            }
+
+            if (downDirection) {
+                y[0] += DOT_SIZE;
+            }
+        }
+
+        function checkCollision() {
+            for (var z = dots; z > 0; z--) {
+                if ((z > 4) && (x[0] == x[z]) && (y[0] == y[z])) {
+                    inGame = false;
+                }
+            }
+
+            if (y[0] >= C_HEIGHT || y[0] < 0 || x[0] >= C_WIDTH || x[0] < 0) {
+                inGame = false;
+            }
+        }
+
+        function locateApple() {
+            var r = Math.floor(Math.random() * MAX_RAND);
+            apple_x = r * DOT_SIZE;
+
+            r = Math.floor(Math.random() * MAX_RAND);
+            apple_y = r * DOT_SIZE;
+        }
+
+        function gameCycle() {
+            if (inGame) {
+                checkApple();
+                checkCollision();
+                move();
+                doDrawing();
+                setTimeout(gameCycle, DELAY);
+            }
+        }
+
+        // Show Start Popup
+        function showStartPopup() {
+            document.getElementById('startPopup').style.display = "flex";
+        }
+
+        // Start the game
+        function startGame() {
+            document.getElementById('startPopup').style.display = "none";
+            inGame = true;
+            canvas = document.getElementById('myCanvas');
+            ctx = canvas.getContext('2d');
+
+            loadImages();
+            createSnake();
+            locateApple();
+            setTimeout(gameCycle, DELAY);
+        }
+
+        // Restart the game
+        function restartGame() {
+            document.getElementById('gameOverPopup').style.display = "none";
+            startGame();
+        }
+
+        // Teachable Machine code for voice recognition
+        const URL = "https://teachablemachine.withgoogle.com/models/WyffxIWSk/";
+
+        async function createModel() {
+            const checkpointURL = URL + "model.json";
+            const metadataURL = URL + "metadata.json";
+
+            const recognizer = speechCommands.create(
+                "BROWSER_FFT",
+                undefined,
+                checkpointURL,
+                metadataURL
+            );
+
+            await recognizer.ensureModelLoaded();
+            return recognizer;
+        }
+
+        async function init() {
+            const recognizer = await createModel();
+            const classLabels = recognizer.wordLabels();
+            const labelContainer = document.getElementById("label-container");
+
+            for (let i = 0; i < classLabels.length; i++) {
+                var new_row = document.createElement("div");
+                new_row.className = i;
+                labelContainer.appendChild(new_row);
+            }
+
+            recognizer.listen(result => {
+                const scores = result.scores;
+
+                let index = scores.indexOf(Math.max(...scores));
+                if (index === 1) {
+                    downDirection = true;
+                    rightDirection = false;
+                    leftDirection = false;
+                    upDirection = false;
+                } else if (index === 2) {
+                    leftDirection = true;
+                    upDirection = false;
+                    downDirection = false;
+                    rightDirection = false;
+                } else if (index === 3) {
+                    rightDirection = true;
+                    upDirection = false;
+                    downDirection = false;
+                    leftDirection = false;
+                } else if (index === 4) {
+                    upDirection = true;
+                    rightDirection = false;
+                    leftDirection = false;
+                    downDirection = false;
+                }
+
+                labelContainer.childNodes[0].innerHTML = `${classLabels[0]}<div class="w3-light-grey w3-round-xlarge"><div class="w3-container w3-red w3-round-xlarge" style="width:${result.scores[0].toFixed(2) * 100}%">${result.scores[0].toFixed(2) * 100}</div>`;
+                labelContainer.childNodes[1].innerHTML = `${classLabels[1]}<div class="w3-light-grey w3-round-xlarge"><div class="w3-container w3-green w3-round-xlarge" style="width:${result.scores[1].toFixed(2) * 100}%">${result.scores[1].toFixed(2) * 100}</div>`;
+                labelContainer.childNodes[2].innerHTML = `${classLabels[2]}<div class="w3-light-grey w3-round-xlarge"><div class="w3-container w3-orange w3-round-xlarge" style="width:${result.scores[2].toFixed(2) * 100}%">${result.scores[2].toFixed(2) * 100}</div>`;
+                labelContainer.childNodes[3].innerHTML = `${classLabels[3]}<div class="w3-light-grey w3-round-xlarge"><div class="w3-container w3-purple w3-round-xlarge" style="width:${result.scores[3].toFixed(2) * 100}%">${result.scores[3].toFixed(2) * 100}</div>`;
+                labelContainer.childNodes[4].innerHTML = `${classLabels[4]}<div class="w3-light-grey w3-round-xlarge"><div class="w3-container w3-black w3-round-xlarge" style="width:${result.scores[4].toFixed(2) * 100}%">${result.scores[4].toFixed(2) * 100}</div>`;
+            }, {
+                includeSpectrogram: true,
+                probabilityThreshold: 0.75,
+                invokeCallbackOnNoiseAndUnknown: true,
+                overlapFactor: 0.50
+            });
+        }
+
+        init(); // Initialize the Teachable Machine model on load
+    </script>
 </body>
 
 </html>
